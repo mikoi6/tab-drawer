@@ -69,7 +69,9 @@ function createDemoApi() {
       skipPinned: true,
       skipAudible: true,
       rebuildGroups: true,
-      groupBy: 'time'
+      groupBy: 'time',
+      lazyRestore: true,
+      restoreInNewWindow: false
     },
     tabCount: tabs.length,
     stashableCount: tabs.filter((t) => !t.active).length,
@@ -215,7 +217,9 @@ let data = {
     skipPinned: true,
     skipAudible: true,
     rebuildGroups: true,
-    groupBy: 'time'
+    groupBy: 'time',
+    lazyRestore: true,
+    restoreInNewWindow: false
   },
   tabCount: 0,
   stashableCount: 0,
@@ -642,6 +646,20 @@ function syncSettingsUI() {
   $('#skipPinned').checked = !!data.settings.skipPinned;
   $('#skipAudible').checked = !!data.settings.skipAudible;
   $('#rebuildGroups').checked = !!data.settings.rebuildGroups;
+  $('#lazyRestore').checked = data.settings.lazyRestore !== false;
+  $('#restoreInNewWindow').checked = !!data.settings.restoreInNewWindow;
+}
+
+/** 取回结果的提示语：说清"冻结"了几个，否则用户会以为标签坏了 */
+function restoreToast(res) {
+  if (!res || res.ok === false) return toast('取回失败：' + (res && res.error));
+  if (!res.count) return toast('没能取回，页面可能被拦截了');
+  if (res.count === 1) return toast('已取回，标签已切过去');
+  const parts = [`已取回 ${res.count} 个`];
+  if (res.frozen) parts.push(`${res.frozen} 个已冻结，点开才加载`);
+  if (res.slow) parts.push(`${res.slow} 个太慢没敢冻结，正在加载`);
+  if (res.failed) parts.push(`${res.failed} 个失败`);
+  toast(parts.join('，'));
 }
 
 /* ================= 7. 事件 ================= */
@@ -725,12 +743,14 @@ $('#list').addEventListener('click', async (e) => {
     return render();
   }
 
-  // 点抽屉条目：取回
+  // 点抽屉条目：取回。单个取回会直接切过去，所以顺手把面板关掉
   if (actEl && actEl.dataset.act === 'restore') {
     const res = await api.restore([actEl.dataset.id]);
     if (res && res.demo) return toast('预览模式：装进浏览器才能真的取回');
-    toast('已取回，去标签栏看看');
-    return refresh();
+    restoreToast(res);
+    await refresh();
+    if (res && res.ok !== false) window.close();
+    return;
   }
 
   // 点标签条目：跳过去
@@ -744,9 +764,19 @@ $('#list').addEventListener('click', async (e) => {
 $('#btnRestoreAll').addEventListener('click', async () => {
   const ids = data.collection.map((i) => i.id);
   if (!ids.length) return;
-  const res = await api.restore(ids);
-  if (res && res.demo) return toast('预览模式：装进浏览器才能真的取回');
-  toast(`已取回 ${res.count} 个标签，标签组一并重建`);
+  // 几十个标签要跑一会儿（并发 3 + 每批等提交），按钮得给出反馈
+  const btn = $('#btnRestoreAll');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '取回中…';
+  try {
+    const res = await api.restore(ids);
+    if (res && res.demo) return toast('预览模式：装进浏览器才能真的取回');
+    restoreToast(res);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
   refresh();
 });
 
@@ -791,7 +821,7 @@ $('#btnSettings').addEventListener('click', (e) => {
   e.currentTarget.classList.toggle('on', !panel.hidden);
 });
 
-for (const id of ['autoSuspend', 'skipPinned', 'skipAudible', 'rebuildGroups']) {
+for (const id of ['autoSuspend', 'skipPinned', 'skipAudible', 'rebuildGroups', 'lazyRestore', 'restoreInNewWindow']) {
   $('#' + id).addEventListener('change', async (e) => {
     await api.saveSettings({ [id]: e.target.checked });
     data.settings[id] = e.target.checked;
@@ -805,5 +835,11 @@ $('#idleMinutes').addEventListener('change', async (e) => {
 });
 
 /* ================= 8. 启动 ================= */
+
+// 调试用：带 #settings 直接展开设置面板，方便截图核对
+if (HASH.includes('settings')) {
+  $('#settings').hidden = false;
+  $('#btnSettings').classList.add('on');
+}
 
 refresh();

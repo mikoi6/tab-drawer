@@ -13,5 +13,5 @@ dist/
 *.pem
 
 # 本地调试残留
-.shot.png
+.shot*.png
 *.log

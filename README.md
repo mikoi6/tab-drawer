@@ -80,7 +80,71 @@ git clone git@github.com:mikoi6/tab-drawer.git
 `chrome.tabs.group()` + `tabGroups.update()`。存快照而不是 `groupId`，因为原组在你收纳完
 就被浏览器回收了，`groupId` 没有跨会话意义。不想要可以在设置里关掉。
 
-## 五、目录结构
+## 五、批量取回：先冻结，再按需加载
+
+一次取回 30 个标签，等于 30 个渲染进程同时起来，网络和内存的峰值比不收纳还难看。这版的处理
+方式是「并发 3 个建标签，每个一提交就立刻卸载」：标签栏上整齐出现一串灰色标签，点哪个才加载哪个。
+
+### 一条绕不过去的硬约束
+
+`chrome.tabs.discard()` **依赖已经提交（committed）的地址**——激活时它靠这个地址重新加载。
+刚 `create` 就 discard，标签会退化成 `about:blank`，**地址就丢了**。
+
+所以"零加载"在 Chrome 里做不到，能选的只是**在哪一步断掉**：
+
+| 断在哪 | 省掉什么 | 代价 |
+| --- | --- | --- |
+| 提交前 | 全部 | 地址丢失，标签变成空白页 |
+| 提交后（本版做法） | 渲染进程、JS 执行、子资源、页面内存 | 首次请求（DNS / 连接 / 响应头）仍会发出 |
+| 加载完再断 | 只有内存 | 峰值已经完全付出去了 |
+
+另外两个限制：`tabs.create` 的 `CreateProperties` **没有 `discarded` 字段**（那是 Firefox 才有的），
+没法"一步创建一个休眠标签"；**活动标签不能 discard**，每个窗口至少留一枚真加载的。
+
+### 实现是三个动作
+
+1. **并发池**：固定 3 个 worker 从同一个游标抢活（`while (cursor < n)` 里 `targets[cursor++]`），
+   比 `for` 里 `await` 一次性全建出来稳得多。
+2. **等提交**：轮询 `tabs.get()`，`!pendingUrl && url && url !== 'about:blank'` 就算已提交。
+   没用 `webNavigation.onCommitted`——那要多申请一个 `webNavigation` 权限，
+   而这个扩展连 host 权限都没要，能不加就不加。
+3. **卸载**：`freezeTab()` 先跳过 `active`（卸不掉）和 `audible`（卸了会掐断声音），失败重试一次。
+
+**3 秒还没提交呢？不卸载。** 这是刻意留的刹车：地址没落定就卸载，标签会退化成 `about:blank`，
+等于把用户存下来的网址弄丢了。这时候宁可让它继续加载——多占一点内存，比丢数据强。
+返回值里 `slow` 就是这类"没敢冻结"的计数，提示语会单独说一句。
+
+**操作队列不是免费的**：`tabs.create` 一返回就放下一个，限住的只是"创建"这个动作，
+标签还是会被瞬间建出来并全部并行加载。所以"不冻结"模式下也必须等到 `status === 'complete'`
+再放下一个（15 秒超时），否则这个队列等于没写。这条是写测试时才发现的。
+
+**失败不阻塞**：某个标签没卸成，只是多占一点内存，标签本身是好的；返回值会区分
+"取回 N 个 / 其中 M 个已冻结 / K 个太慢没冻结"。
+
+### 单个取回不走这条路
+
+只有一条时，用户点它就是**想看它**——所以直接 `active: true` 切过去，不冻结、不排队，面板顺手关掉。
+批量才走冻结流程。这两个场景混在一起做，会得到一个"点了没反应"的面板。
+
+### 怎么验证的（不用开浏览器）
+
+`tools/test_restore.js` 把 `chrome.*` 整个换成假对象，用 `vm` 在新上下文里加载 `background.js`，
+截住它注册的 `onMessage` 监听器，然后真的发一条 `RESTORE` 消息。断言的是行为，不是实现：
+
+- 并发峰值 ≤ 3，而且**确实用满**（防止退化成串行）
+- 每个标签都在"提交后"才被卸载
+- 提交永远不来的那种，**一个都不许卸**（防 `about:blank`）
+- 单个取回不冻结；关闭冻结时并发上限放宽到 6
+- 抽屉最终清空、标签组被重建
+
+```
+node tools/test_restore.js
+```
+
+上面那两个坑（并发限不住、超时误卸载）都是这个壳子先发现的，不是靠读代码看出来的。
+它比装 Playwright 轻得多，改完 `background.js` 随手跑一下就行。
+
+## 六、目录结构
 
 ```
 tab-drawer/
@@ -90,14 +154,15 @@ tab-drawer/
 ├── popup.css          # 面板样式
 ├── popup.js           # 面板逻辑：api 层 / render 层 / handlers 层
 ├── icons/             # 图标（由 tools/make_icons.py 生成）
-├── docs/              # README 用的界面截图（screenshot.png / screenshot-tabs.png）
+├── docs/              # README 用的界面截图（screenshot*.png）
 ├── tools/
 │   ├── make_icons.py  # 纯标准库生成 PNG 图标
-│   └── build_preview.py # 把三个文件合成 preview.html
+│   ├── build_preview.py # 把三个文件合成 preview.html
+│   └── test_restore.js  # 用假 chrome 验证取回逻辑（node tools/test_restore.js）
 └── preview.html       # 产物，用来在普通浏览器里预览界面
 ```
 
-## 六、几个关键设计决定（这几条比代码本身值钱）
+## 七、几个关键设计决定（这几条比代码本身值钱）
 
 **1. 为什么写操作放在 Service Worker，不放 popup？**
 popup 的本质是一个随时会被销毁的网页。鼠标移开、切个窗口，它立刻被回收，正在跑的
@@ -138,7 +203,7 @@ Service Worker 里没有"当前窗口"，`currentWindow` 会退化成"最后获�
 项目里多个容器是 `display:flex`，JS 里 `el.hidden = true` 会失效（UA 的 `[hidden]{display:none}`
 优先级低于类选择器）。所以 CSS 顶部加了一条 `[hidden]{display:none !important}` 兜底。
 
-## 七、数据结构
+## 八、数据结构
 
 ```js
 // chrome.storage.local
@@ -159,7 +224,9 @@ Service Worker 里没有"当前窗口"，`currentWindow` 会退化成"最后获�
     skipPinned: true,     // 不动固定标签
     skipAudible: true,    // 不动出声的标签
     rebuildGroups: true,  // 取回时重建标签组
-    groupBy: "time"       // 面板列表默认分组：time | site
+    groupBy: "time",      // 面板列表默认分组：time | site | group
+    lazyRestore: true,    // 批量取回时并发建、建好即卸载
+    restoreInNewWindow: false // 取回时开新窗口
   }
 }
 ```
@@ -168,7 +235,7 @@ Service Worker 里没有"当前窗口"，`currentWindow` 会退化成"最后获�
 `tabGroups`（读组名/颜色、取回时建组）、`contextMenus`（右键菜单）。
 **没有申请任何 host 权限**，也就是说这个扩展读不到任何网页内容。
 
-## 八、可以继续做的方向
+## 九、可以继续做的方向
 
 1. **云同步**：`chrome.storage.sync` 有 8 KB/项、100 KB 总量限制，抽屉很容易超；正解是
    自己搭个后端或者用 `storage.local` + 手写导出/导入 JSON。
@@ -186,15 +253,17 @@ Service Worker 里没有"当前窗口"，`currentWindow` 会退化成"最后获�
 - [x] 和标签组配合（收纳记组名与颜色，取回自动重建）
 - [x] 单个 / 逐个标签收纳（行内按钮、右键菜单、`Alt+Shift+A` 连按）
 - [x] 标签栏右键 + 多选标签一次收（Chrome 150+）
+- [x] 批量取回先冻结（并发 3 + 提交后卸载，点开才加载）
 
-## 九、调试备忘
+## 十、调试备忘
 
 - Service Worker 日志：`chrome://extensions` → 找到本扩展 → 点「Service Worker」。
 - 改了 `background.js` 必须点扩展卡片上的刷新按钮，改 `popup.*` 只需重开面板。
 - 面板里看不到 console？右键面板 → 检查。
-- 想直接进某个视图调样式：`preview.html#tabs`、`preview.html#site`、`preview.html#group`。
+- 想直接进某个视图调样式：`preview.html#tabs`、`preview.html#site`、`preview.html#group`、`preview.html#settings`。
 - 图标重生成：`python tools/make_icons.py`
 - 预览页重生成：`python tools/build_preview.py`
+- 取回逻辑自测（改 `background.js` 后必跑）：`node tools/test_restore.js`
 
 ---
 

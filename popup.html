@@ -92,6 +92,15 @@
       <input type="checkbox" id="rebuildGroups" />
       <span>取回时重建标签组</span>
     </label>
+    <label class="row">
+      <input type="checkbox" id="lazyRestore" />
+      <span>批量取回时先冻结，点开才加载</span>
+    </label>
+    <label class="row">
+      <input type="checkbox" id="restoreInNewWindow" />
+      <span>取回时开一个新窗口</span>
+    </label>
+    <p class="hint">批量取回几十个标签时，全部一起加载会把内存和网络打满。开启「先冻结」后，标签会整齐地出现在标签栏上（灰色），点哪一个才加载哪一个。</p>
     <p class="hint">休眠＝把后台页面的渲染进程释放掉，标签还在标签栏上，点一下会自己重新加载。数据不会丢，但未提交的表单内容可能丢。</p>
     <p class="hint">收纳标签组里的页面时，会记下组名和颜色；取回时自动重新成组。</p>
   </section>

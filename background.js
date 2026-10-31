@@ -16,7 +16,9 @@ const DEFAULTS = {
     skipPinned: true,
     skipAudible: true,
     rebuildGroups: true, // 恢复时重建标签组
-    groupBy: 'time' // 面板列表的默认分组方式：time | site | group
+    groupBy: 'time', // 面板列表的默认分组方式：time | site | group
+    lazyRestore: true, // 批量取回时，标签建好就卸载，点开才加载
+    restoreInNewWindow: false // 取回时开一个新窗口，不冲乱当前窗口
   }
 };
 
@@ -141,49 +143,177 @@ async function stashActiveTab() {
   return stashTabs([active.id]);
 }
 
+/* ---------------- 取回：并发队列 + 提交后卸载 ---------------- */
+
 /**
- * 从抽屉取回：新开标签（后台打开，不抢焦点）→ 按原样重建标签组 → 从抽屉移除
+ * 为什么要搞这么复杂？因为一次性开 30 个标签 = 30 个渲染进程同时起来，
+ * 网络和内存的峰值比不收纳还难看。
+ *
+ * 但"完全不加载"在 Chrome 里做不到，原因是一条硬约束：
+ *   tabs.discard 依赖**已提交（committed）**的地址，激活时靠它重新加载。
+ *   刚 create 就 discard，标签会退化成 about:blank，地址就丢了。
+ * 所以要等提交，代价是首次请求（DNS / 连接 / 响应头）已经发出去了；
+ * 省下的是渲染进程、JS 执行、子资源、页面内存。
+ *
+ * 另外 CreateProperties 里**没有 discarded 字段**（那是 Firefox 才有的），
+ * 而且**活动标签不能 discard**，所以每个窗口至少留一枚是真加载的。
+ */
+const RESTORE_COMMIT_TIMEOUT = 3000;
+const RESTORE_LOAD_TIMEOUT = 15000;
+const RESTORE_CONCURRENCY = 3; // 冻结模式下并发建 3 个就够快，峰值也好看
+const RESTORE_CONCURRENCY_EAGER = 6; // 不冻结时是纯加载，允许并发高一点
+
+/**
+ * 等一个标签进入某个"可以放手了"的状态。
+ * 不用 webNavigation.onCommitted：那要多申请一个 webNavigation 权限，
+ * 而这个扩展目前连 host 权限都没要，能不加就不加。
+ */
+function waitForTab(tabId, isDone, timeoutMs) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (reason) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearInterval(poll);
+      resolve(reason);
+    };
+    const timer = setTimeout(() => finish('timeout'), timeoutMs);
+    const poll = setInterval(async () => {
+      if (settled) return;
+      try {
+        const t = await chrome.tabs.get(tabId);
+        if (isDone(t)) return finish('done');
+      } catch (_) {
+        return finish('gone'); // 标签被关了
+      }
+    }, 80);
+  });
+}
+
+/** 导航是否已提交：地址落实、pendingUrl 清空 */
+function isCommitted(t) {
+  if (t.discarded) return true;
+  if (t.status === 'complete') return true;
+  return !t.pendingUrl && !!t.url && t.url !== 'about:blank';
+}
+
+/** 卸载一个后台标签。返回是否真的卸掉了 */
+async function freezeTab(tabId) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const t = await chrome.tabs.get(tabId);
+      if (t.discarded) return true;
+      if (t.active) return false; // API 限制：活动标签不能卸载
+      if (t.audible) return false; // 正在出声，卸了会把声音掐掉
+      await chrome.tabs.discard(tabId);
+      return true;
+    } catch (_) {
+      // 有时页面刚提交、渲染还没起来，discard 会失败一次，隔一会儿再试
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+  return false;
+}
+
+/** 把原来属于同一个标签组的项重新合成一个组 */
+async function rebuildGroupsOf(created) {
+  const buckets = new Map();
+  for (const c of created) {
+    if (!c.group) continue;
+    const key = `${c.group.title || ''}|${c.group.color || 'grey'}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(c);
+  }
+  for (const arr of buckets.values()) {
+    try {
+      const groupId = await chrome.tabs.group({ tabIds: arr.map((a) => a.tabId) });
+      const meta = arr[0].group;
+      const patch = { color: meta.color || 'grey' };
+      if (meta.title) patch.title = meta.title;
+      await chrome.tabGroups.update(groupId, patch);
+    } catch (_) {
+      // 建组失败就退化成普通标签，不影响取回
+    }
+  }
+}
+
+/**
+ * 从抽屉取回。单个取回会直接切过去（用户点了它就是想看它）；
+ * 批量取回则在后台开、开一个冻一个。
  */
 async function restoreItems(ids) {
   const { collection, settings } = await readState();
   const wanted = new Set(ids);
   const targets = collection.filter((i) => wanted.has(i.id));
-  if (!targets.length) return { ok: true, count: 0 };
+  if (!targets.length) return { ok: true, count: 0, frozen: 0 };
+
+  const single = targets.length === 1;
+  const lazy = settings.lazyRestore !== false && !single;
+  const limit = lazy ? RESTORE_CONCURRENCY : RESTORE_CONCURRENCY_EAGER;
+
+  // 可选：开新窗口，别把当前窗口冲乱
+  let windowId;
+  let leftoverTabId = null;
+  if (settings.restoreInNewWindow && !single) {
+    try {
+      const win = await chrome.windows.create({ focused: true });
+      windowId = win.id;
+      leftoverTabId = win.tabs && win.tabs[0] ? win.tabs[0].id : null;
+    } catch (_) {
+      windowId = undefined;
+    }
+  }
 
   const created = [];
-  for (const item of targets) {
-    try {
-      const tab = await chrome.tabs.create({ url: item.url, active: false });
-      created.push({ tabId: tab.id, group: item.group || null });
-    } catch (_) {
-      // 单个失败不影响其它
-    }
-  }
+  let frozen = 0;
+  let slow = 0;
+  let failed = 0;
+  let cursor = 0;
 
-  // 把原来属于同一个标签组的项重新合成一个组
-  if (settings.rebuildGroups) {
-    const buckets = new Map();
-    for (const c of created) {
-      if (!c.group) continue;
-      const key = `${c.group.title || ''}|${c.group.color || 'grey'}`;
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(c);
-    }
-    for (const arr of buckets.values()) {
+  // 固定数量的 worker 从同一个游标抢活，就是最简单的并发池
+  const worker = async () => {
+    while (cursor < targets.length) {
+      const item = targets[cursor++];
       try {
-        const groupId = await chrome.tabs.group({ tabIds: arr.map((a) => a.tabId) });
-        const meta = arr[0].group;
-        const patch = { color: meta.color || 'grey' };
-        if (meta.title) patch.title = meta.title;
-        await chrome.tabGroups.update(groupId, patch);
+        const props = { url: item.url, active: single };
+        if (typeof windowId === 'number') props.windowId = windowId;
+        const tab = await chrome.tabs.create(props);
+        if (lazy) {
+          const reason = await waitForTab(tab.id, isCommitted, RESTORE_COMMIT_TIMEOUT);
+          if (reason === 'done') {
+            if (await freezeTab(tab.id)) frozen++;
+          } else if (reason === 'timeout') {
+            // 3 秒还没提交地址。这时**绝不能**卸载：discard 依赖已提交的地址，
+            // 提前卸会把标签退化成 about:blank，等于把用户存的网址弄丢了。
+            // 宁可让它继续加载——多占一点内存，也比丢数据强。
+            slow++;
+          }
+        } else {
+          // 不冻结时也必须等它加载完再放下一个，否则"并发上限"只限住了 create 这个动作，
+          // 标签会瞬间全建出来、全部并行加载——那这个队列就等于没写。
+          await waitForTab(tab.id, (t) => t.status === 'complete', RESTORE_LOAD_TIMEOUT);
+        }
+        created.push({ tabId: tab.id, group: item.group || null });
       } catch (_) {
-        // 建组失败就退化成普通标签，不影响取回
+        failed++;
       }
     }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, targets.length) }, worker)
+  );
+
+  // 新窗口自带的那个空白页，用完就关
+  if (leftoverTabId != null && created.length) {
+    await chrome.tabs.remove(leftoverTabId).catch(() => {});
   }
 
+  if (settings.rebuildGroups && created.length) await rebuildGroupsOf(created);
+
   await saveCollection(collection.filter((i) => !wanted.has(i.id)));
-  return { ok: true, count: created.length };
+  return { ok: true, count: created.length, frozen, slow, failed, total: targets.length };
 }
 
 async function deleteItems(ids) {
