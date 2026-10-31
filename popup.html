@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>标签抽屉</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="hd">
+    <div class="brand">
+      <img class="logo" src="icons/icon128.png" alt="" />
+      <div>
+        <h1>标签抽屉</h1>
+        <p class="sub" id="subline">正在读取…</p>
+      </div>
+    </div>
+    <button class="icon-btn" id="btnSettings" title="设置" aria-label="设置">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    </button>
+  </header>
+
+  <div class="actions">
+    <button class="btn primary" id="btnStash">收进抽屉</button>
+    <button class="btn ghost" id="btnSuspend" title="立即休眠所有后台标签，释放内存">休眠后台</button>
+  </div>
+
+  <div class="search">
+    <input id="q" type="search" placeholder="搜索抽屉里的标题或网址" autocomplete="off" spellcheck="false" />
+  </div>
+
+  <div class="toolbar" id="toolbar" hidden>
+    <span id="listCount"></span>
+    <div class="toolbar-actions">
+      <button class="link" id="btnRestoreAll">全部取回</button>
+      <button class="link danger" id="btnClear">清空</button>
+    </div>
+  </div>
+
+  <main class="list" id="list"></main>
+
+  <div class="empty" id="empty" hidden>
+    <div class="empty-icon">🗂️</div>
+    <p class="empty-title" id="emptyTitle">抽屉是空的</p>
+    <p class="empty-desc" id="emptyDesc">点上面的「收进抽屉」，把这一刻不想看的标签先存起来。</p>
+  </div>
+
+  <section class="settings" id="settings" hidden>
+    <label class="row">
+      <input type="checkbox" id="autoSuspend" />
+      <span>自动休眠后台标签</span>
+    </label>
+    <label class="row sub">
+      <span>闲置超过</span>
+      <select id="idleMinutes">
+        <option value="5">5 分钟</option>
+        <option value="10">10 分钟</option>
+        <option value="15">15 分钟</option>
+        <option value="30">30 分钟</option>
+        <option value="60">1 小时</option>
+        <option value="120">2 小时</option>
+      </select>
+    </label>
+    <label class="row">
+      <input type="checkbox" id="skipPinned" />
+      <span>不打扰固定标签</span>
+    </label>
+    <label class="row">
+      <input type="checkbox" id="skipAudible" />
+      <span>不打扰正在出声的标签</span>
+    </label>
+    <p class="hint">休眠＝把后台页面的渲染进程释放掉，标签还在标签栏上，点一下会自己重新加载。数据不会丢，但未提交的表单内容可能丢。</p>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

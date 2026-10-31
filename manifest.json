@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "TabDrawer · 标签抽屉",
+  "version": "0.1.0",
+  "description": "把暂时不看但还要留着的标签页收进抽屉，需要时再取回；可选自动休眠后台标签，省内存。",
+  "minimum_chrome_version": "116",
+  "permissions": ["tabs", "storage", "alarms"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "标签抽屉",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "stash-window": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "把当前窗口其他标签收进抽屉"
+    },
+    "suspend-background": {
+      "suggested_key": { "default": "Alt+Shift+D" },
+      "description": "立即休眠所有后台标签"
+    }
+  }
+}

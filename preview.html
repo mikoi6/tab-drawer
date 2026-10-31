@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>标签抽屉</title>
+  <style>
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f6f7fb;
+  --line: #ebedf5;
+  --text: #16181f;
+  --text-2: #5b6178;
+  --muted: #8f95ab;
+  --accent: #4f46e5;
+  --accent-2: #6d5cff;
+  --accent-soft: #eef0ff;
+  --danger: #e5484d;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 384px;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; }
+
+/* ---------- header ---------- */
+.hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { display: flex; align-items: center; gap: 10px; }
+
+.logo {
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  display: block;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28);
+}
+
+h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.sub {
+  margin: 1px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.icon-btn {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1;
+  transition: 0.15s;
+}
+.icon-btn:hover { background: var(--bg-soft); color: var(--accent); }
+.icon-btn.on { background: var(--accent-soft); border-color: #d9dcff; color: var(--accent); }
+
+/* ---------- actions ---------- */
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.btn {
+  flex: 1;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  transition: 0.15s;
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(79, 70, 229, 0.25);
+}
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.primary:disabled {
+  background: #e9eaf2; color: var(--muted); box-shadow: none; cursor: not-allowed;
+}
+
+.btn.ghost {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  background: #fff;
+  border-color: var(--line);
+  color: var(--text-2);
+}
+.btn.ghost:hover { border-color: #d9dcff; color: var(--accent); background: var(--accent-soft); }
+
+/* ---------- search ---------- */
+.search { padding: 10px 14px 6px; }
+
+.search input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-soft);
+  font-size: 12.5px;
+  color: var(--text);
+  outline: none;
+  transition: 0.15s;
+}
+.search input::placeholder { color: var(--muted); }
+.search input:focus {
+  background: #fff;
+  border-color: #c9cbff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.09);
+}
+
+/* ---------- toolbar ---------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 14px 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.toolbar-actions { display: flex; gap: 10px; }
+
+.link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+.link:hover { text-decoration: underline; }
+.link.danger { color: var(--danger); }
+.link.armed {
+  color: #fff;
+  background: var(--danger);
+  padding: 1px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+/* ---------- list ---------- */
+.list {
+  flex: 1;
+  min-height: 0;
+  max-height: 330px;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+.list::-webkit-scrollbar { width: 8px; }
+.list::-webkit-scrollbar-thumb {
+  background: #dfe2ee; border-radius: 4px; border: 2px solid #fff;
+}
+
+.group-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 6px 4px;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.item:hover { background: var(--bg-soft); }
+
+.favicon {
+  width: 16px; height: 16px;
+  flex: 0 0 16px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.avatar {
+  width: 16px; height: 16px;
+  flex: 0 0 16px;
+  display: grid; place-items: center;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.meta { min-width: 0; flex: 1; }
+
+.item-title {
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-host {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.del {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  transition: 0.12s;
+}
+.item:hover .del { opacity: 1; }
+.del:hover { background: #ffeced; color: var(--danger); }
+
+mark {
+  background: #fff3bf;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ---------- empty ---------- */
+.empty {
+  padding: 26px 30px 32px;
+  text-align: center;
+}
+.empty-icon { font-size: 26px; }
+.empty-title {
+  margin: 8px 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.empty-desc {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* ---------- settings ---------- */
+.settings {
+  border-top: 1px solid var(--line);
+  padding: 10px 14px 12px;
+  background: var(--bg-soft);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.row.sub { padding-left: 22px; font-size: 12px; }
+.row input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
+.row select {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(22, 24, 31, 0.9);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: pop 0.18s ease-out;
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+  </style>
+  <style>
+    body.page-preview { margin: 28px auto; border-radius: 14px; overflow: hidden;
+      box-shadow: 0 12px 48px rgba(23,25,40,.14), 0 0 0 1px #e9ebf3; }
+  </style>
+</head>
+<body class="page-preview">
+  <header class="hd">
+    <div class="brand">
+      <img class="logo" src="icons/icon128.png" alt="" />
+      <div>
+        <h1>标签抽屉</h1>
+        <p class="sub" id="subline">正在读取…</p>
+      </div>
+    </div>
+    <button class="icon-btn" id="btnSettings" title="设置" aria-label="设置">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    </button>
+  </header>
+
+  <div class="actions">
+    <button class="btn primary" id="btnStash">收进抽屉</button>
+    <button class="btn ghost" id="btnSuspend" title="立即休眠所有后台标签，释放内存">休眠后台</button>
+  </div>
+
+  <div class="search">
+    <input id="q" type="search" placeholder="搜索抽屉里的标题或网址" autocomplete="off" spellcheck="false" />
+  </div>
+
+  <div class="toolbar" id="toolbar" hidden>
+    <span id="listCount"></span>
+    <div class="toolbar-actions">
+      <button class="link" id="btnRestoreAll">全部取回</button>
+      <button class="link danger" id="btnClear">清空</button>
+    </div>
+  </div>
+
+  <main class="list" id="list"></main>
+
+  <div class="empty" id="empty" hidden>
+    <div class="empty-icon">🗂️</div>
+    <p class="empty-title" id="emptyTitle">抽屉是空的</p>
+    <p class="empty-desc" id="emptyDesc">点上面的「收进抽屉」，把这一刻不想看的标签先存起来。</p>
+  </div>
+
+  <section class="settings" id="settings" hidden>
+    <label class="row">
+      <input type="checkbox" id="autoSuspend" />
+      <span>自动休眠后台标签</span>
+    </label>
+    <label class="row sub">
+      <span>闲置超过</span>
+      <select id="idleMinutes">
+        <option value="5">5 分钟</option>
+        <option value="10">10 分钟</option>
+        <option value="15">15 分钟</option>
+        <option value="30">30 分钟</option>
+        <option value="60">1 小时</option>
+        <option value="120">2 小时</option>
+      </select>
+    </label>
+    <label class="row">
+      <input type="checkbox" id="skipPinned" />
+      <span>不打扰固定标签</span>
+    </label>
+    <label class="row">
+      <input type="checkbox" id="skipAudible" />
+      <span>不打扰正在出声的标签</span>
+    </label>
+    <p class="hint">休眠＝把后台页面的渲染进程释放掉，标签还在标签栏上，点一下会自己重新加载。数据不会丢，但未提交的表单内容可能丢。</p>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+  <script>
+/**
+ * TabDrawer · 弹窗界面
+ *
+ * 结构上分三层，方便你以后替换任意一层：
+ *   api      —— 数据通道。有扩展环境就走消息；没有就走内存假数据（所以这个页面
+ *               单独用浏览器打开也能看到完整界面，方便调样式）。
+ *   render   —— 纯展示，只读 view 对象，不碰任何浏览器 API。
+ *   handlers —— 用户操作，调 api 然后 refresh()。
+ */
+
+/* ================= 1. 环境探测 ================= */
+
+const HAS_CHROME =
+  typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+
+/* ================= 2. 数据通道 ================= */
+
+const realApi = {
+  getState: () => chrome.runtime.sendMessage({ type: 'GET_STATE' }),
+  stash: () => chrome.runtime.sendMessage({ type: 'STASH_WINDOW' }),
+  suspendAll: () => chrome.runtime.sendMessage({ type: 'SUSPEND_ALL' }),
+  restore: (ids) => chrome.runtime.sendMessage({ type: 'RESTORE', ids }),
+  remove: (ids) => chrome.runtime.sendMessage({ type: 'DELETE', ids }),
+  clear: () => chrome.runtime.sendMessage({ type: 'DELETE_ALL' }),
+  saveSettings: (settings) =>
+    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings })
+};
+
+// 预览模式用的假数据：只为了让界面在普通网页里也能渲染出来
+function createDemoApi() {
+  const H = 3600 * 1000;
+  const D = 24 * H;
+  const now = Date.now();
+  const state = {
+    collection: [
+      { id: 'a1', title: 'Promise - JavaScript | MDN', url: 'https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise', savedAt: now - 0.3 * H },
+      { id: 'a2', title: 'chrome.tabs API 参考文档', url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs', savedAt: now - 1.2 * H },
+      { id: 'a3', title: '【全国大学生软件测试大赛】Web 应用测试赛项规程', url: 'https://www.example-contest.cn/rules/web', savedAt: now - 3 * H },
+      { id: 'a4', title: 'Playwright 官方文档 · Locators 定位器', url: 'https://playwright.dev/docs/locators', savedAt: now - 1 * D },
+      { id: 'a5', title: '如何用 Service Worker 处理长时间任务', url: 'https://web.dev/articles/service-workers', savedAt: now - 2 * D },
+      { id: 'a6', title: '广州大学教务系统 - 选课', url: 'https://jw.gzhu.edu.cn/course/select', savedAt: now - 5 * D },
+      { id: 'a7', title: 'OneTab 的产品设计思路分析', url: 'https://www.notion.so/onetab-analysis', savedAt: now - 12 * D }
+    ],
+    settings: { autoSuspend: true, idleMinutes: 30, skipPinned: true, skipAudible: true },
+    tabCount: 23,
+    stashableCount: 22,
+    suspendedCount: 4
+  };
+  const demoNote = { ok: true, demo: true, count: 0 };
+  return {
+    getState: async () => ({ ok: true, ...state }),
+    stash: async () => demoNote,
+    suspendAll: async () => demoNote,
+    restore: async () => demoNote,
+    remove: async () => demoNote,
+    clear: async () => demoNote,
+    saveSettings: async (s) => {
+      state.settings = { ...state.settings, ...s };
+      return { ok: true, settings: state.settings };
+    }
+  };
+}
+
+const api = HAS_CHROME ? realApi : createDemoApi();
+
+/* ================= 3. 小工具 ================= */
+
+const $ = (sel) => document.querySelector(sel);
+
+function hostOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch (_) {
+    return url.slice(0, 40);
+  }
+}
+
+function bucketOf(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86400000);
+  if (d.toDateString() === today.toDateString()) return '今天';
+  if (d.toDateString() === yesterday.toDateString()) return '昨天';
+  if (Date.now() - ts < 7 * 86400000) return '最近 7 天';
+  return '更早';
+}
+
+let toastTimer = null;
+function toast(text) {
+  const el = $('#toast');
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.hidden = true;
+  }, 1900);
+}
+
+/** 带高亮的文本节点（避免用 innerHTML 拼标题，防止标题里带 HTML 标签搞坏页面） */
+function highlighted(text, keyword) {
+  const frag = document.createDocumentFragment();
+  if (!keyword) {
+    frag.append(text);
+    return frag;
+  }
+  const lower = text.toLowerCase();
+  const k = keyword.toLowerCase();
+  let from = 0;
+  let idx = lower.indexOf(k);
+  while (idx !== -1) {
+    if (idx > from) frag.append(text.slice(from, idx));
+    const mark = document.createElement('mark');
+    mark.textContent = text.slice(idx, idx + k.length);
+    frag.append(mark);
+    from = idx + k.length;
+    idx = lower.indexOf(k, from);
+  }
+  if (from < text.length) frag.append(text.slice(from));
+  return frag;
+}
+
+/* ================= 4. 状态与渲染 ================= */
+
+let view = {
+  collection: [],
+  settings: { autoSuspend: false, idleMinutes: 30, skipPinned: true, skipAudible: true },
+  tabCount: 0,
+  stashableCount: 0,
+  suspendedCount: 0
+};
+let keyword = '';
+
+function render() {
+  // --- 顶部统计 ---
+  $('#subline').textContent = `本窗口 ${view.tabCount} 个标签 · 已休眠 ${view.suspendedCount}`;
+
+  // --- 主按钮 ---
+  const stashBtn = $('#btnStash');
+  stashBtn.textContent =
+    view.stashableCount > 0 ? `收进抽屉（${view.stashableCount}）` : '收进抽屉';
+  stashBtn.disabled = view.stashableCount === 0;
+
+  // --- 列表 ---
+  const list = $('#list');
+  const empty = $('#empty');
+  const toolbar = $('#toolbar');
+  list.replaceChildren();
+
+  const kw = keyword.trim();
+  const items = view.collection
+    .slice()
+    .sort((a, b) => b.savedAt - a.savedAt)
+    .filter(
+      (i) =>
+        !kw ||
+        i.title.toLowerCase().includes(kw.toLowerCase()) ||
+        i.url.toLowerCase().includes(kw.toLowerCase())
+    );
+
+  const hasAny = view.collection.length > 0;
+  $('#listCount').textContent = kw
+    ? `找到 ${items.length} 项`
+    : `共 ${view.collection.length} 项`;
+  toolbar.hidden = !hasAny;
+
+  if (!items.length) {
+    empty.hidden = false;
+    if (hasAny) {
+      $('#emptyTitle').textContent = '没有匹配的内容';
+      $('#emptyDesc').textContent = '换个关键词试试，或者清空搜索框。';
+    } else {
+      $('#emptyTitle').textContent = '抽屉是空的';
+      $('#emptyDesc').textContent = '点上面的「收进抽屉」，把这一刻不想看的标签先存起来。';
+    }
+    return;
+  }
+  empty.hidden = true;
+
+  // --- 按时间分组 ---
+  const groups = new Map();
+  for (const item of items) {
+    const key = bucketOf(item.savedAt);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+
+  for (const [name, arr] of groups) {
+    const title = document.createElement('div');
+    title.className = 'group-title';
+    title.textContent = `${name} · ${arr.length}`;
+    list.append(title);
+
+    for (const item of arr) list.append(buildItem(item, kw));
+  }
+}
+
+function buildItem(item, kw) {
+  const row = document.createElement('div');
+  row.className = 'item';
+  row.dataset.id = item.id;
+  row.title = `${item.title}
+${item.url}
+点击取回`;
+
+  // favicon：有图标用图标，没有就用域名首字母
+  if (item.favIconUrl) {
+    const img = document.createElement('img');
+    img.className = 'favicon';
+    img.src = item.favIconUrl;
+    img.alt = '';
+    img.addEventListener('error', () => img.replaceWith(avatarOf(item)));
+    row.append(img);
+  } else {
+    row.append(avatarOf(item));
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+
+  const t = document.createElement('div');
+  t.className = 'item-title';
+  t.append(highlighted(item.title, kw));
+
+  const h = document.createElement('div');
+  h.className = 'item-host';
+  h.textContent = hostOf(item.url);
+
+  meta.append(t, h);
+  row.append(meta);
+
+  const del = document.createElement('button');
+  del.className = 'del';
+  del.dataset.act = 'delete';
+  del.dataset.id = item.id;
+  del.title = '从抽屉删除';
+  del.textContent = '×';
+  row.append(del);
+
+  return row;
+}
+
+function avatarOf(item) {
+  const span = document.createElement('span');
+  span.className = 'avatar';
+  span.textContent = (hostOf(item.url)[0] || '?').toUpperCase();
+  return span;
+}
+
+/* ================= 5. 数据刷新 ================= */
+
+async function refresh() {
+  try {
+    const res = await api.getState();
+    if (!res || res.ok === false) {
+      toast('读取失败，请重开面板');
+      return;
+    }
+    view = {
+      collection: res.collection || [],
+      settings: { ...view.settings, ...(res.settings || {}) },
+      tabCount: res.tabCount ?? view.tabCount,
+      stashableCount: res.stashableCount ?? 0,
+      suspendedCount: res.suspendedCount ?? 0
+    };
+    render();
+    syncSettingsUI();
+  } catch (err) {
+    toast('连接后台失败：' + err.message);
+  }
+}
+
+function syncSettingsUI() {
+  $('#autoSuspend').checked = !!view.settings.autoSuspend;
+  $('#idleMinutes').value = String(view.settings.idleMinutes);
+  $('#skipPinned').checked = !!view.settings.skipPinned;
+  $('#skipAudible').checked = !!view.settings.skipAudible;
+}
+
+/* ================= 6. 事件 ================= */
+
+$('#btnStash').addEventListener('click', async () => {
+  const res = await api.stash();
+  if (res && res.demo) return toast('预览模式：装进浏览器才会真的收纳');
+  if (!res || res.ok === false) return toast('收纳失败：' + (res && res.error));
+  if (res.count === 0) return toast('这些标签都已经在抽屉里了');
+  toast(`已收进 ${res.count} 个标签` + (res.skipped ? `，跳过重复 ${res.skipped} 个` : ''));
+  refresh();
+});
+
+$('#btnSuspend').addEventListener('click', async () => {
+  const res = await api.suspendAll();
+  if (res && res.demo) return toast('预览模式：装进浏览器才会真的休眠');
+  if (!res || res.ok === false) return toast('操作失败');
+  toast(res.count ? `已休眠 ${res.count} 个后台标签` : '没有可休眠的后台标签');
+  refresh();
+});
+
+$('#list').addEventListener('click', async (e) => {
+  const id = e.target.closest('.item')?.dataset.id;
+  if (!id) return;
+
+  if (e.target.dataset.act === 'delete') {
+    e.stopPropagation();
+    const res = await api.remove([id]);
+    if (res && res.demo) return toast('预览模式：不会真的删除');
+    refresh();
+    return;
+  }
+
+  const res = await api.restore([id]);
+  if (res && res.demo) return toast('预览模式：装进浏览器才能真的取回');
+  toast('已取回，去标签栏看看');
+  refresh();
+});
+
+$('#btnRestoreAll').addEventListener('click', async () => {
+  const ids = view.collection.map((i) => i.id);
+  if (!ids.length) return;
+  const res = await api.restore(ids);
+  if (res && res.demo) return toast('预览模式：装进浏览器才能真的取回');
+  toast(`已取回 ${res.count} 个标签`);
+  refresh();
+});
+
+// 清空是不可逆操作：不用 confirm()（弹窗里弹系统对话框容易把面板一起关掉），
+// 改成按钮二次确认——点一次变成"确认清空"，3 秒内再点一次才执行。
+let clearArmed = false;
+let clearTimer = null;
+const clearBtn = $('#btnClear');
+
+function disarmClear() {
+  clearArmed = false;
+  clearTimer = null;
+  clearBtn.textContent = '清空';
+  clearBtn.classList.remove('armed');
+}
+
+clearBtn.addEventListener('click', async () => {
+  if (!view.collection.length) return;
+  if (!clearArmed) {
+    clearArmed = true;
+    clearBtn.textContent = `确认清空 ${view.collection.length} 项？`;
+    clearBtn.classList.add('armed');
+    clearTimer = setTimeout(disarmClear, 3000);
+    return;
+  }
+  clearTimeout(clearTimer);
+  const res = await api.clear();
+  disarmClear();
+  if (res && res.demo) return toast('预览模式：不会真的清空');
+  toast('抽屉已清空');
+  refresh();
+});
+
+$('#q').addEventListener('input', (e) => {
+  keyword = e.target.value;
+  render();
+});
+
+$('#btnSettings').addEventListener('click', (e) => {
+  const panel = $('#settings');
+  panel.hidden = !panel.hidden;
+  e.currentTarget.classList.toggle('on', !panel.hidden);
+});
+
+// 设置项：改一项就存一次，简单可靠
+for (const id of ['autoSuspend', 'skipPinned', 'skipAudible']) {
+  $('#' + id).addEventListener('change', async (e) => {
+    await api.saveSettings({ [id]: e.target.checked });
+    view.settings[id] = e.target.checked;
+  });
+}
+
+$('#idleMinutes').addEventListener('change', async (e) => {
+  const v = Number(e.target.value);
+  await api.saveSettings({ idleMinutes: v });
+  view.settings.idleMinutes = v;
+});
+
+/* ================= 7. 启动 ================= */
+
+refresh();
+
+  </script>
+</body>
+</html>
