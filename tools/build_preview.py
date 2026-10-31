@@ -46,7 +46,9 @@ def main():
     html = html.replace("<body>", '<body class="page-preview">')
 
     out = os.path.join(ROOT, "preview.html")
-    with open(out, "w", encoding="utf-8") as f:
+    # newline="\n" 是必需的：Windows 上文本模式默认写 CRLF，而仓库里 .gitattributes
+    # 锁了 eol=lf，于是每次重建预览都会多出一条"文件已修改"的假 diff。
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write(html)
     print("wrote", out)
 
