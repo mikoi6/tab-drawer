@@ -23,18 +23,33 @@
     </button>
   </header>
 
+  <div class="segmented" role="tablist">
+    <button class="seg-btn on" data-view="drawer" role="tab">
+      抽屉<span class="badge" id="segDrawer">0</span>
+    </button>
+    <button class="seg-btn" data-view="tabs" role="tab">
+      本窗标签<span class="badge" id="segTabs">0</span>
+    </button>
+  </div>
+
   <div class="actions">
     <button class="btn primary" id="btnStash">收进抽屉</button>
     <button class="btn ghost" id="btnSuspend" title="立即休眠所有后台标签，释放内存">休眠后台</button>
   </div>
 
   <div class="search">
-    <input id="q" type="search" placeholder="搜索抽屉里的标题或网址" autocomplete="off" spellcheck="false" />
+    <input id="q" type="search" placeholder="搜索标题或网址" autocomplete="off" spellcheck="false" />
   </div>
 
-  <div class="toolbar" id="toolbar" hidden>
-    <span id="listCount"></span>
-    <div class="toolbar-actions">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span id="listCount">共 0 项</span>
+      <div class="mode-toggle" id="modeToggle">
+        <button class="mode-btn on" data-mode="time">按时间</button>
+        <button class="mode-btn" data-mode="site">按站点</button>
+      </div>
+    </div>
+    <div class="toolbar-actions" id="drawerActions">
       <button class="link" id="btnRestoreAll">全部取回</button>
       <button class="link danger" id="btnClear">清空</button>
     </div>
@@ -72,7 +87,12 @@
       <input type="checkbox" id="skipAudible" />
       <span>不打扰正在出声的标签</span>
     </label>
+    <label class="row">
+      <input type="checkbox" id="rebuildGroups" />
+      <span>取回时重建标签组</span>
+    </label>
     <p class="hint">休眠＝把后台页面的渲染进程释放掉，标签还在标签栏上，点一下会自己重新加载。数据不会丢，但未提交的表单内容可能丢。</p>
+    <p class="hint">收纳标签组里的页面时，会记下组名和颜色；取回时自动重新成组。</p>
   </section>
 
   <div class="toast" id="toast" hidden></div>

@@ -23,14 +23,16 @@ def main():
     css = read("popup.css")
     js = read("popup.js")
 
+    # 注意：re.sub 的替换串会被当作模板解析，js 里的 \d \. 会被当成非法转义，
+    # 所以这里传函数（返回原样字符串），而不是直接传字符串。
     html = re.sub(
         r'\s*<link rel="stylesheet" href="popup\.css" />',
-        "\n  <style>\n" + css + "\n  </style>",
+        lambda m: "\n  <style>\n" + css + "\n  </style>",
         html,
     )
     html = re.sub(
         r'\s*<script src="popup\.js"></script>',
-        "\n  <script>\n" + js + "\n  </script>",
+        lambda m: "\n  <script>\n" + js + "\n  </script>",
         html,
     )
     # 让它在桌面浏览器里居中显示，像一张卡片

@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "TabDrawer · 标签抽屉",
-  "version": "0.1.0",
-  "description": "把暂时不看但还要留着的标签页收进抽屉，需要时再取回；可选自动休眠后台标签，省内存。",
+  "version": "0.2.0",
+  "description": "把暂时不看但还要留着的标签页收进抽屉，支持按站点聚类、保留标签组；可选自动休眠后台标签，省内存。",
   "minimum_chrome_version": "116",
-  "permissions": ["tabs", "storage", "alarms"],
+  "permissions": ["tabs", "storage", "alarms", "tabGroups", "contextMenus"],
   "background": {
     "service_worker": "background.js"
   },
@@ -23,6 +23,10 @@
     "128": "icons/icon128.png"
   },
   "commands": {
+    "stash-active": {
+      "suggested_key": { "default": "Alt+Shift+A" },
+      "description": "把当前标签收进抽屉（连按可逐个收）"
+    },
     "stash-window": {
       "suggested_key": { "default": "Alt+Shift+S" },
       "description": "把当前窗口其他标签收进抽屉"

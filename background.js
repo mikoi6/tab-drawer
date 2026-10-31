@@ -14,7 +14,9 @@ const DEFAULTS = {
     autoSuspend: false,
     idleMinutes: 30,
     skipPinned: true,
-    skipAudible: true
+    skipAudible: true,
+    rebuildGroups: true, // 恢复时重建标签组
+    groupBy: 'time' // 面板列表的默认分组方式：time | site
   }
 };
 
@@ -22,6 +24,8 @@ const DEFAULTS = {
 const PRIVILEGED = /^(chrome|edge|about|devtools|chrome-extension|view-source|chrome-search):/i;
 
 const ALARM_NAME = 'tabdrawer-sweep';
+const MENU_STASH_TAB = 'tabdrawer-stash-tab';
+const MENU_STASH_PAGE = 'tabdrawer-stash-page';
 
 /* ---------------- 存储读写 ---------------- */
 
@@ -44,39 +48,7 @@ async function refreshBadge(count) {
   await chrome.action.setBadgeText({ text: n > 0 ? (n > 99 ? '99+' : String(n)) : '' });
 }
 
-/* ---------------- 核心动作 ---------------- */
-
-/** 把一批标签页收进抽屉：存元数据 → 关标签 */
-async function stashTabs(tabIds) {
-  const unique = [...new Set(tabIds)];
-  const tabs = (await Promise.all(
-    unique.map((id) => chrome.tabs.get(id).catch(() => null))
-  )).filter((t) => t && t.url && !PRIVILEGED.test(t.url));
-
-  if (!tabs.length) return { ok: true, count: 0, skipped: 0 };
-
-  const { collection } = await readState();
-  const seen = new Set(collection.map((i) => i.url));
-  const now = Date.now();
-  const fresh = [];
-
-  for (const t of tabs) {
-    // 同一个网址已经在抽屉里就不再重复记一条
-    if (seen.has(t.url)) continue;
-    seen.add(t.url);
-    fresh.push({
-      id: crypto.randomUUID(),
-      title: t.title || t.url,
-      url: t.url,
-      favIconUrl: t.favIconUrl || '',
-      savedAt: now
-    });
-  }
-
-  if (fresh.length) await saveCollection([...fresh, ...collection]);
-  await chrome.tabs.remove(tabs.map((t) => t.id)).catch(() => {});
-  return { ok: true, count: fresh.length, skipped: tabs.length - fresh.length };
-}
+/* ---------------- 窗口 / 标签组 ---------------- */
 
 /**
  * Service Worker 里没有"当前窗口"这个概念，直接 query({currentWindow:true})
@@ -97,6 +69,63 @@ async function queryWindowTabs() {
   return chrome.tabs.query(query);
 }
 
+/**
+ * 取一个标签所属的标签组元数据。
+ * tab.groupId 为 -1 表示没在组里；组名可能为空（用户没命名），所以 title 允许 ''。
+ */
+async function groupMetaOf(tab, cache) {
+  if (typeof tab.groupId !== 'number' || tab.groupId < 0) return null;
+  if (cache && cache.has(tab.groupId)) return cache.get(tab.groupId);
+  let meta = { title: '', color: 'grey' };
+  try {
+    const g = await chrome.tabGroups.get(tab.groupId);
+    meta = { title: g.title || '', color: g.color || 'grey' };
+  } catch (_) {
+    // 组刚好在这时被删掉了，当作没有组
+  }
+  if (cache) cache.set(tab.groupId, meta);
+  return meta;
+}
+
+/* ---------------- 核心动作 ---------------- */
+
+/**
+ * 把一批标签页收进抽屉：读元数据 → 存 → 关标签。
+ * tabIds 可以是一个（单个收纳），也可以是整窗（批量收纳）。
+ */
+async function stashTabs(tabIds) {
+  const unique = [...new Set(tabIds)];
+  const tabs = (await Promise.all(
+    unique.map((id) => chrome.tabs.get(id).catch(() => null))
+  )).filter((t) => t && t.url && !PRIVILEGED.test(t.url));
+
+  if (!tabs.length) return { ok: true, count: 0, skipped: 0 };
+
+  const { collection } = await readState();
+  const seen = new Set(collection.map((i) => i.url));
+  const groupCache = new Map();
+  const now = Date.now();
+  const fresh = [];
+
+  for (const t of tabs) {
+    // 同一个网址已经在抽屉里就不再重复记一条
+    if (seen.has(t.url)) continue;
+    seen.add(t.url);
+    fresh.push({
+      id: crypto.randomUUID(),
+      title: t.title || t.url,
+      url: t.url,
+      favIconUrl: t.favIconUrl || '',
+      savedAt: now,
+      group: await groupMetaOf(t, groupCache)
+    });
+  }
+
+  if (fresh.length) await saveCollection([...fresh, ...collection]);
+  await chrome.tabs.remove(tabs.map((t) => t.id)).catch(() => {});
+  return { ok: true, count: fresh.length, skipped: tabs.length - fresh.length };
+}
+
 /** 收起当前窗口除"正在看的这一页"以外的全部标签 */
 async function stashCurrentWindow() {
   const tabs = await queryWindowTabs();
@@ -104,22 +133,57 @@ async function stashCurrentWindow() {
   return stashTabs(ids);
 }
 
-/** 从抽屉取回：新开标签（后台打开，不抢焦点）并从抽屉移除 */
+/** 收起当前正在看的这一页（关掉后浏览器会自动激活相邻标签，连按即逐个收） */
+async function stashActiveTab() {
+  const tabs = await queryWindowTabs();
+  const active = tabs.find((t) => t.active);
+  if (!active) return { ok: true, count: 0 };
+  return stashTabs([active.id]);
+}
+
+/**
+ * 从抽屉取回：新开标签（后台打开，不抢焦点）→ 按原样重建标签组 → 从抽屉移除
+ */
 async function restoreItems(ids) {
-  const { collection } = await readState();
+  const { collection, settings } = await readState();
   const wanted = new Set(ids);
   const targets = collection.filter((i) => wanted.has(i.id));
   if (!targets.length) return { ok: true, count: 0 };
 
+  const created = [];
   for (const item of targets) {
     try {
-      await chrome.tabs.create({ url: item.url, active: false });
+      const tab = await chrome.tabs.create({ url: item.url, active: false });
+      created.push({ tabId: tab.id, group: item.group || null });
     } catch (_) {
       // 单个失败不影响其它
     }
   }
+
+  // 把原来属于同一个标签组的项重新合成一个组
+  if (settings.rebuildGroups) {
+    const buckets = new Map();
+    for (const c of created) {
+      if (!c.group) continue;
+      const key = `${c.group.title || ''}|${c.group.color || 'grey'}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(c);
+    }
+    for (const arr of buckets.values()) {
+      try {
+        const groupId = await chrome.tabs.group({ tabIds: arr.map((a) => a.tabId) });
+        const meta = arr[0].group;
+        const patch = { color: meta.color || 'grey' };
+        if (meta.title) patch.title = meta.title;
+        await chrome.tabGroups.update(groupId, patch);
+      } catch (_) {
+        // 建组失败就退化成普通标签，不影响取回
+      }
+    }
+  }
+
   await saveCollection(collection.filter((i) => !wanted.has(i.id)));
-  return { ok: true, count: targets.length };
+  return { ok: true, count: created.length };
 }
 
 async function deleteItems(ids) {
@@ -128,6 +192,18 @@ async function deleteItems(ids) {
   const next = collection.filter((i) => !wanted.has(i.id));
   await saveCollection(next);
   return { ok: true, count: collection.length - next.length };
+}
+
+async function focusTab(tabId) {
+  try {
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    if (tab && typeof tab.windowId === 'number') {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message) };
+  }
 }
 
 /**
@@ -186,8 +262,29 @@ async function handleMessage(msg) {
         suspendedCount: tabs.filter((t) => t.discarded).length
       };
     }
+    case 'GET_WINDOW_TABS': {
+      const tabs = await queryWindowTabs();
+      const groupCache = new Map();
+      const out = [];
+      for (const t of tabs) {
+        out.push({
+          id: t.id,
+          title: t.title || t.url || '',
+          url: t.url || '',
+          favIconUrl: t.favIconUrl || '',
+          active: !!t.active,
+          pinned: !!t.pinned,
+          discarded: !!t.discarded,
+          audible: !!t.audible,
+          group: await groupMetaOf(t, groupCache)
+        });
+      }
+      return { ok: true, tabs: out };
+    }
     case 'STASH_WINDOW':
       return stashCurrentWindow();
+    case 'STASH_ACTIVE':
+      return stashActiveTab();
     case 'STASH_TABS':
       return stashTabs(msg.tabIds || []);
     case 'RESTORE':
@@ -198,6 +295,8 @@ async function handleMessage(msg) {
       return deleteItems((await readState()).collection.map((i) => i.id));
     case 'SUSPEND_ALL':
       return suspendIdle(0);
+    case 'FOCUS_TAB':
+      return focusTab(msg.tabId);
     case 'SAVE_SETTINGS': {
       const { settings } = await readState();
       const next = { ...settings, ...(msg.settings || {}) };
@@ -217,6 +316,55 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true; // 保持消息通道打开，等异步结果
 });
 
+/* ---------------- 右键菜单 ---------------- */
+
+/**
+ * contexts:['tab']（在标签栏上右键）是 Chrome 150 才加入的新能力。
+ * 低版本上 create 会失败，而且失败是异步汇报的（runtime.lastError），
+ * 不接管的话不仅菜单不出现，控制台还会一直报未捕获错误。
+ * 所以这里包一层 Promise，失败就当没这个菜单，其余菜单照常工作。
+ */
+function createMenu(props) {
+  return new Promise((resolve) => {
+    try {
+      chrome.contextMenus.create(props, () => {
+        resolve(chrome.runtime.lastError ? null : props.id);
+      });
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+async function setupContextMenus() {
+  await new Promise((resolve) => chrome.contextMenus.removeAll(() => resolve()));
+
+  // 页面右键：任何版本都能用
+  await createMenu({
+    id: MENU_STASH_PAGE,
+    title: '把这个页面收进标签抽屉',
+    contexts: ['page']
+  });
+
+  // 标签栏右键：Chrome 150+ 才有，低版本静默跳过
+  await createMenu({
+    id: MENU_STASH_TAB,
+    title: '收进标签抽屉',
+    contexts: ['tab']
+  });
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  let tabId;
+  if (info.menuItemId === MENU_STASH_TAB) {
+    // 在标签栏右键时，被点的那个标签在第二个参数里（可能不是你正在看的那个）
+    tabId = (tab && tab.id) ?? (info.tab && info.tab.id);
+  } else if (info.menuItemId === MENU_STASH_PAGE) {
+    tabId = tab && tab.id;
+  }
+  if (typeof tabId === 'number') await stashTabs([tabId]);
+});
+
 /* ---------------- 生命周期 ---------------- */
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -226,6 +374,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (!raw.settings) patch.settings = DEFAULTS.settings;
   if (Object.keys(patch).length) await chrome.storage.local.set(patch);
 
+  await setupContextMenus();
   const { settings } = await readState();
   await syncAlarm(settings);
   await refreshBadge();
@@ -244,6 +393,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'stash-active') await stashActiveTab();
   if (command === 'stash-window') await stashCurrentWindow();
   if (command === 'suspend-background') await suspendIdle(0);
 });
