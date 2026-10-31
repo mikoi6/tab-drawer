@@ -16,7 +16,7 @@ const DEFAULTS = {
     skipPinned: true,
     skipAudible: true,
     rebuildGroups: true, // 恢复时重建标签组
-    groupBy: 'time' // 面板列表的默认分组方式：time | site
+    groupBy: 'time' // 面板列表的默认分组方式：time | site | group
   }
 };
 
@@ -319,10 +319,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 /* ---------------- 右键菜单 ---------------- */
 
 /**
- * contexts:['tab']（在标签栏上右键）是 Chrome 150 才加入的新能力。
- * 低版本上 create 会失败，而且失败是异步汇报的（runtime.lastError），
- * 不接管的话不仅菜单不出现，控制台还会一直报未捕获错误。
- * 所以这里包一层 Promise，失败就当没这个菜单，其余菜单照常工作。
+ * 关于 contexts:['tab']（在标签栏上右键），这里补一个查证过的事实：
+ * 这个枚举值在 ContextType 的类型定义里存在很久了，但 Chrome 真正**实现**它
+ * 是 150 版（2026-06-10 发布的稳定版）——在那之前只写在文档和类型里，
+ * 注册会失败。所以"标签栏右键"既不是自古就有，也不是"现在还没有"。
+ *
+ * 依然保留探测式注册：manifest 的 minimum_chrome_version 是 116，
+ * 装到 150 以下仍会失败，而且失败是异步汇报的（runtime.lastError）。
+ * 不接管的话不仅菜单不出现，控制台还会持续报未捕获错误，把两个菜单一起废掉。
  */
 function createMenu(props) {
   return new Promise((resolve) => {
@@ -354,15 +358,38 @@ async function setupContextMenus() {
   });
 }
 
+/**
+ * 标签栏右键时，用户可能先按住 Ctrl 框选了好几个标签再右键。
+ * Chrome 150 的更新说明说"会收到所有选中的标签"，但 OnClickData 的类型定义里
+ * 并没有对应字段，所以不依赖它——直接用 tabs.query({highlighted:true}) 取
+ * 当前窗口所有选中标签，这是从很早版本就有、语义稳定的做法。
+ *
+ * 关键陷阱：右键一个"没被选中"的标签时，highlighted 返回的是当前**活动**标签，
+ * 而不是你点的那一个。所以只有"被点的标签本身也在选中集合里、且不止一个"
+ * 才当多选，否则一律按单个处理，不然会收错页面。
+ */
+async function selectedTabsWith(tab) {
+  if (!tab || typeof tab.id !== 'number') return [];
+  try {
+    const query =
+      typeof tab.windowId === 'number'
+        ? { windowId: tab.windowId, highlighted: true }
+        : { currentWindow: true, highlighted: true };
+    const picked = (await chrome.tabs.query(query)).map((t) => t.id);
+    if (picked.length > 1 && picked.includes(tab.id)) return picked;
+  } catch (_) {
+    /* 查询失败就退化成单个 */
+  }
+  return [tab.id];
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  let tabId;
   if (info.menuItemId === MENU_STASH_TAB) {
     // 在标签栏右键时，被点的那个标签在第二个参数里（可能不是你正在看的那个）
-    tabId = (tab && tab.id) ?? (info.tab && info.tab.id);
+    await stashTabs(await selectedTabsWith(tab));
   } else if (info.menuItemId === MENU_STASH_PAGE) {
-    tabId = tab && tab.id;
+    if (tab && typeof tab.id === 'number') await stashTabs([tab.id]);
   }
-  if (typeof tabId === 'number') await stashTabs([tabId]);
 });
 
 /* ---------------- 生命周期 ---------------- */

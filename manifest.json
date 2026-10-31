@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TabDrawer · 标签抽屉",
-  "version": "0.2.0",
-  "description": "把暂时不看但还要留着的标签页收进抽屉，支持按站点聚类、保留标签组；可选自动休眠后台标签，省内存。",
+  "version": "0.2.1",
+  "description": "把暂时不看但还要留着的标签页收进抽屉，支持按时间/站点/标签组聚类、保留分组；可选自动休眠后台标签，省内存。",
   "minimum_chrome_version": "116",
   "permissions": ["tabs", "storage", "alarms", "tabGroups", "contextMenus"],
   "background": {

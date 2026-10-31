@@ -261,6 +261,12 @@ h1 {
   object-fit: contain;
 }
 
+.group-dot {
+  width: 9px; height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+}
+
 .group-label {
   font-size: 11px;
   font-weight: 600;
@@ -306,7 +312,7 @@ h1 {
 
 .mode-btn {
   height: 19px;
-  padding: 0 6px;
+  padding: 0 5px;
   border: none;
   border-radius: 5px;
   background: transparent;
@@ -563,8 +569,9 @@ mark {
     <div class="toolbar-left">
       <span id="listCount">共 0 项</span>
       <div class="mode-toggle" id="modeToggle">
-        <button class="mode-btn on" data-mode="time">按时间</button>
-        <button class="mode-btn" data-mode="site">按站点</button>
+        <button class="mode-btn on" data-mode="time">时间</button>
+        <button class="mode-btn" data-mode="site">站点</button>
+        <button class="mode-btn" data-mode="group">标签组</button>
       </div>
     </div>
     <div class="toolbar-actions" id="drawerActions">
@@ -654,11 +661,11 @@ function createDemoApi() {
   const now = Date.now();
 
   const collection = [
-    { id: 'a1', title: 'Promise - JavaScript | MDN', url: 'https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise', savedAt: now - 0.3 * H },
-    { id: 'a2', title: 'chrome.tabs API 参考文档', url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs', savedAt: now - 1.2 * H },
-    { id: 'a3', title: '【全国大学生软件测试大赛】Web 应用测试赛项规程', url: 'https://www.example-contest.cn/rules/web', savedAt: now - 3 * H, group: { title: '测试大赛', color: 'blue' } },
-    { id: 'a4', title: 'Playwright 官方文档 · Locators 定位器', url: 'https://playwright.dev/docs/locators', savedAt: now - 1 * D },
-    { id: 'a5', title: '如何用 Service Worker 处理长时间任务', url: 'https://web.dev/articles/service-workers', savedAt: now - 2 * D },
+    { id: 'a1', title: 'Promise - JavaScript | MDN', url: 'https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise', savedAt: now - 0.3 * H, group: { title: '前端文档', color: 'blue' } },
+    { id: 'a2', title: 'chrome.tabs API 参考文档', url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs', savedAt: now - 1.2 * H, group: { title: '扩展开发', color: 'green' } },
+    { id: 'a3', title: '【全国大学生软件测试大赛】Web 应用测试赛项规程', url: 'https://www.example-contest.cn/rules/web', savedAt: now - 3 * H, group: { title: '测试大赛', color: 'purple' } },
+    { id: 'a4', title: 'Playwright 官方文档 · Locators 定位器', url: 'https://playwright.dev/docs/locators', savedAt: now - 1 * D, group: { title: '测试大赛', color: 'purple' } },
+    { id: 'a5', title: '如何用 Service Worker 处理长时间任务', url: 'https://web.dev/articles/service-workers', savedAt: now - 2 * D, group: { title: '扩展开发', color: 'green' } },
     { id: 'a6', title: '广州大学教务系统 - 选课', url: 'https://jw.gzhu.edu.cn/course/select', savedAt: now - 5 * D },
     { id: 'a7', title: 'OneTab 的产品设计思路分析', url: 'https://www.notion.so/onetab-analysis', savedAt: now - 12 * D },
     { id: 'a8', title: '知乎 · 前端如何系统地学', url: 'https://www.zhihu.com/question/1001', savedAt: now - 2 * H },
@@ -841,16 +848,17 @@ let data = {
 
 const ui = {
   tab: 'drawer', // drawer | tabs
-  groupBy: 'time', // time | site
+  groupBy: 'time', // time | site | group
   keyword: '',
   collapsed: new Set() // 折叠的分组 key
 };
 
-// 调试用：popup.html#tabs / #site（preview.html 同理）可以直接进指定视图，
-// 方便截图和调样式。带 #site 时不再用存储里的分组偏好覆盖它。
+// 调试用：popup.html#tabs / #site / #group（preview.html 同理）可以直接进指定视图，
+// 方便截图和调样式。带 #site / #group 时不再用存储里的分组偏好覆盖它。
 const HASH = location.hash || '';
 if (HASH.includes('tabs')) ui.tab = 'tabs';
-if (HASH.includes('site')) ui.groupBy = 'site';
+const HASH_MODE = ['group', 'site'].find((m) => HASH.includes(m)) || '';
+if (HASH_MODE) ui.groupBy = HASH_MODE;
 
 /* ================= 5. 渲染 ================= */
 
@@ -905,8 +913,37 @@ function renderDrawer() {
   paintGroups(buildDrawerGroups(items), 'drawer');
 }
 
-/** 抽屉列表的分组：按时间桶，或按站点 */
+/** 抽屉列表的分组：按时间桶、按站点，或按标签组 */
 function buildDrawerGroups(items) {
+  if (ui.groupBy === 'group') {
+    const map = new Map();
+    for (const it of items) {
+      // 组名和颜色一起当键：同名不同色是两个组，合并会把语义搞错
+      const g = it.group || null;
+      const key = g ? `g:${g.color || 'grey'}|${g.title || ''}` : 'g:-';
+      if (!map.has(key)) map.set(key, { group: g, items: [] });
+      map.get(key).items.push(it);
+    }
+    return [...map.entries()]
+      .sort((a, b) => {
+        const aBare = !a[1].group;
+        const bBare = !b[1].group;
+        if (aBare !== bBare) return aBare ? 1 : -1; // 未分组永远垫底
+        const byCount = b[1].items.length - a[1].items.length;
+        if (byCount) return byCount;
+        return (a[1].group && a[1].group.title || '').localeCompare(
+          (b[1].group && b[1].group.title) || ''
+        );
+      })
+      .map(([key, v]) => ({
+        key,
+        label: v.group ? v.group.title || '未命名组' : '未分组',
+        dot: v.group ? GROUP_COLORS[v.group.color] || GROUP_COLORS.grey : '',
+        icon: '',
+        items: v.items.sort((x, y) => y.savedAt - x.savedAt)
+      }));
+  }
+
   if (ui.groupBy === 'site') {
     const map = new Map();
     for (const it of items) {
@@ -1017,6 +1054,14 @@ function paintGroups(groups, mode) {
       head.append(img);
     }
 
+    // 标签组用颜色点打头，颜色本身就是这个维度的主要信息
+    if (g.dot) {
+      const dot = document.createElement('i');
+      dot.className = 'group-dot';
+      dot.style.background = g.dot;
+      head.append(dot);
+    }
+
     const label = document.createElement('span');
     label.className = 'group-label';
     label.textContent = g.label;
@@ -1080,12 +1125,21 @@ function buildDrawerItem(item, kw) {
   t.className = 'item-title';
   t.append(highlighted(item.title, kw));
 
-  const sub = document.createElement('div');
-  sub.className = 'item-host';
-  sub.textContent = hostOf(item.url);
-  if (item.group) sub.append(groupChip(item.group));
+  // 分组维度上已经写过的信息，条目里不再重复一遍：
+  // 按站点分组时域名是冗余的，按标签组分组时组名是冗余的。
+  const showHost = ui.groupBy !== 'site';
+  const showGroup = ui.groupBy !== 'group' && !!item.group;
 
-  meta.append(t, sub);
+  if (showHost || showGroup) {
+    const sub = document.createElement('div');
+    sub.className = 'item-host';
+    if (showHost) sub.textContent = hostOf(item.url);
+    if (showGroup) sub.append(groupChip(item.group));
+    meta.append(t, sub);
+  } else {
+    meta.append(t);
+  }
+
   row.append(meta);
 
   const del = document.createElement('button');
@@ -1184,8 +1238,8 @@ async function refresh() {
     data.stashableCount = res.stashableCount ?? 0;
     data.suspendedCount = res.suspendedCount ?? 0;
 
-    // 面板记住上次用的分组方式（除非本次是带 #site 打开的调试视图）
-    if (!HASH.includes('site') && (data.settings.groupBy === 'site' || data.settings.groupBy === 'time')) {
+    // 面板记住上次用的分组方式（除非本次是带 #site / #group 打开的调试视图）
+    if (!HASH_MODE && ['time', 'site', 'group'].includes(data.settings.groupBy)) {
       ui.groupBy = data.settings.groupBy;
     }
 

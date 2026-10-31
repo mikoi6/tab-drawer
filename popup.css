@@ -255,6 +255,12 @@ h1 {
   object-fit: contain;
 }
 
+.group-dot {
+  width: 9px; height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+}
+
 .group-label {
   font-size: 11px;
   font-weight: 600;
@@ -300,7 +306,7 @@ h1 {
 
 .mode-btn {
   height: 19px;
-  padding: 0 6px;
+  padding: 0 5px;
   border: none;
   border-radius: 5px;
   background: transparent;
